@@ -2,6 +2,28 @@
   import svelteLogo from './assets/svelte.svg'
   import viteLogo from '/vite.svg'
   import Counter from './lib/Counter.svelte'
+
+  async function doPost () {
+		
+		const res = await fetch('http://localhost:8000/set-site-name', {
+			method: 'POST',
+      headers: {
+        "Content-Type": "application/json",
+      },
+			body: JSON.stringify({
+				"site_name":"bob",
+				"credentials":{
+          "username":"admin",
+          "password":"123"
+        }
+			})
+		})
+    console.log(res)
+    console.log(res.json())
+
+	}
+
+  doPost()
 </script>
 
 <main>
