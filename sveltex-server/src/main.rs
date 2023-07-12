@@ -8,6 +8,7 @@ use sha2::{Sha256, Digest};
 use hex;
 use rusqlite::{Connection, Result};
 use std::collections::HashMap;
+use std::io::Error;
 use std::path::Path;
 use std::sync::Mutex;
 use r2d2::Pool;
@@ -16,15 +17,9 @@ use r2d2_sqlite::SqliteConnectionManager;
 use crate::request_handler::load_request_handlers;
 #[path = "request_handlers/request_handler.rs"] mod request_handler;
 
-use crate::role_request_handler::load_role_request_handlers;
-#[path = "request_handlers/role_request_handler.rs"] mod role_request_handler;
 pub struct RequestHandler{
-    handler:HashMap<String, fn(&State<Pool<SqliteConnectionManager>>, &String) -> String>
+    handler:HashMap<&'static str,fn(&State<Pool<SqliteConnectionManager>>,&TransmitData) -> Result<String,Error>>
 }
-pub struct RoleRequestHandler {
-    handler:HashMap<String, fn(&State<Pool<SqliteConnectionManager>>, &String) -> String>
-}
-
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RequestQuery {
@@ -39,23 +34,7 @@ pub struct Credentials {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SetData {
-    site_name:String,
-    credentials:Credentials
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GetData {
-    query:RequestQuery
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GetRoleData {
-    credentials:Credentials
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SetRoleData {
+pub struct TransmitData {
     query:RequestQuery,
     credentials:Credentials
 }
@@ -70,57 +49,47 @@ async fn validate_credentials(passed_username:&String,passed_password:&String,us
 #[post("/set-data", format = "json", data = "<request>")]
 async fn set_data(credentials: &State<Credentials>,
     connection:&State<Pool<SqliteConnectionManager>>,
-    secret_handler:&State<RoleRequestHandler>,
-    request:Json<SetRoleData>) -> Status {
+    secret_handler:&State<RequestHandler>,
+    request:Json<TransmitData>) -> Json<String>  {
         //Validating credentials
         let valid_credentials=validate_credentials(&request.credentials.username, &request.credentials.password, &credentials.username, &credentials.password).await;
         if !valid_credentials {
-            return Status::BadRequest;
+            return Json("bad request".to_string())
         }
         let request_type = &request.query.request_type;
-        let assumed_handler = secret_handler.handler.get(request_type);
+        let assumed_handler = secret_handler.handler.get(request_type.as_str());
         match assumed_handler {
             Some(handler_function) => {
-                handler_function(connection,&request.query.request_query);
+                handler_function(connection,&request);
             },
             None => {
-                return Status::BadRequest
+                return Json("bad request".to_string())
             }
         }
 
-        Status::Ok
-}
-
-#[post("/get-role-data", format = "json", data = "<get_role_data>")]
-async fn get_role_data(credentials: &State<Credentials>,
-    connection:&State<Pool<SqliteConnectionManager>>,
-    secret_handler:&State<RoleRequestHandler>,
-    get_role_data: Json<GetRoleData>) -> Json<Vec<String>> {
-        let locked_connection=connection.get().unwrap();
-        let mut stmt = locked_connection.prepare("SELECT name FROM sveltex_database").unwrap();
-        let mut rows= stmt.query([]).unwrap();
-        let mut data = Vec::new();
-        while let Some(row) = rows.next().unwrap() {
-            data.push(row.get(0).unwrap());
-        }
-        Json(data)
-}
+        return Json("ok".to_string())
+    }
 
 
 #[post("/get-data", format = "json", data = "<request>")]
 async fn get_data(connection:&State<Pool<SqliteConnectionManager>>,
     handler:&State<RequestHandler>, 
-    request: Json<GetData>) -> Json<String> {
-
+    request: Json<TransmitData>) -> Json<String> {
         let request_type = &request.query.request_type;
-        let assumed_handler = handler.handler.get(request_type);
+        let assumed_handler = handler.handler.get(request_type.as_str());
         match assumed_handler {
             Some(handler_function) => {
-                let data=handler_function(connection,&request.query.request_query);
-                return Json(data)
+                let data=handler_function(connection,&request).ok();
+                match data {
+                    Some(data)=>{
+                        return Json(data)
+                    }, None=>{
+                        return Json("bad request".to_string())
+                    }
+                }
             },
             None => {
-                return Json("undefined".to_string())
+                return Json("bad request".to_string())
             }
         }
 
@@ -160,14 +129,12 @@ fn rocket() -> _ {
     let creds: Credentials = serde_json::from_str(&data).unwrap();
     println!("Parsed credentials!");
     let request_handlers:RequestHandler=RequestHandler {handler:load_request_handlers()};
-    let role_request_handlers:RoleRequestHandler=RoleRequestHandler {handler:load_role_request_handlers()};
     rocket::build()
     .attach(Cors)
-    .mount("/", routes![set_data, get_data,get_role_data,all_get,all_options])
+    .mount("/", routes![set_data, get_data,all_get,all_options])
     .manage(creds)
     .manage(pool)
     .manage(request_handlers)
-    .manage(role_request_handlers)
 }
 
 
