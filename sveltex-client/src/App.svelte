@@ -5,13 +5,16 @@
 
   async function doPost () {
 		
-		const res = await fetch('http://localhost:8000/set-site-name', {
+		const res = await fetch('http://localhost:8000/set-data', {
 			method: 'POST',
       headers: {
         "Content-Type": "application/json",
       },
 			body: JSON.stringify({
-				"site_name":"bob",
+				"query":{
+          "request_type":"set_site_name",
+          "request_query":"Sveltex"
+        },
 				"credentials":{
           "username":"admin",
           "password":"123"
@@ -23,7 +26,29 @@
 
 	}
 
-  doPost()
+  async function getSiteName(){
+    		
+		const res = await fetch('http://localhost:8000/get-data', {
+			method: 'POST',
+      headers: {
+        "Content-Type": "application/json",
+      },
+			body: JSON.stringify({
+				"query":{
+          "request_type":"get_site_name",
+          "request_query":""
+        },
+				"credentials":{
+          "username":"admin",
+          "password":"123"
+        }
+			})
+		})
+    console.log(res)
+    console.log(res.json())
+  }
+
+  getSiteName()
 </script>
 
 <main>
