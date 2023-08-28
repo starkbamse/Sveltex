@@ -1,0 +1,8 @@
+[
+    {
+        "name":"Login",
+        "endpoint":"login",
+        "description":"Used to retrieve a session key for accessing the system.",
+        "required_access":0
+    }
+]
